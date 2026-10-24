@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { height: 100%; }
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-900 dark:text-zinc-100;
+  font-family: var(--font-inter), var(--font-noto-kr), -apple-system, "Apple SD Gothic Neo", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (min-width: 1024px) { body { @apply bg-white dark:bg-zinc-950; } }
+
+.tnum { font-variant-numeric: tabular-nums; }
+.no-bar { scrollbar-width: none; }
+.no-bar::-webkit-scrollbar { display: none; }
+
+/* Material Symbols Rounded, weight 200; .fill switches to the filled style */
+.ms {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal; font-style: normal; line-height: 1; letter-spacing: normal;
+  text-transform: none; white-space: nowrap; direction: ltr;
+  display: inline-block; flex: none; width: 1em; height: 1em; overflow: hidden;
+  font-feature-settings: "liga";
+  font-variation-settings: "FILL" 0, "wght" 200, "GRAD" 0, "opsz" 24;
+  transition: font-variation-settings 0.15s;
+}
+.ms.fill { font-variation-settings: "FILL" 1, "wght" 200, "GRAD" 0, "opsz" 24; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
