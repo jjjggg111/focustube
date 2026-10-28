@@ -12,6 +12,8 @@ export type Video = {
   thumb: string;
   durationSec: number;
   publishedAt: string;
+  /** Missing when the uploader hides it, or on videos saved before counts were fetched. */
+  viewCount?: number;
 };
 
 export type Tag = {
@@ -38,5 +40,15 @@ export type Settings = {
 
 /** Today's usage. bonusSec is extra time chosen at the limit; it resets at midnight. */
 export type Daily = { date: string; watchedSec: number; count: number; bonusSec?: number };
+
+export type Comment = {
+  id: string;
+  author: string;
+  avatar: string;
+  text: string;
+  likes: number;
+  replies: number;
+  publishedAt: string;
+};
 
 export type ApiError = "NO_KEY" | "QUOTA" | "FAILED";

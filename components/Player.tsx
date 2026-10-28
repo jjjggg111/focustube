@@ -57,6 +57,16 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ videoId,
         height: "100%",
         playerVars: { playsinline: 1, rel: 0, autoplay: 1, origin: window.location.origin },
         events: {
+          // Browsers often block autoplay with sound (always on iOS). If it didn't start,
+          // play muted, which every browser allows; YouTube's player shows its own unmute button.
+          onReady: (e) => {
+            e.target.playVideo();
+            setTimeout(() => {
+              if (cancelled) return;
+              const s = e.target.getPlayerState();
+              if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) { e.target.mute(); e.target.playVideo(); }
+            }, 1500);
+          },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING && !cb.current.onPlay()) e.target.pauseVideo();
             if (e.data === YT.PlayerState.ENDED) cb.current.onEnded();

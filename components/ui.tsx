@@ -7,6 +7,9 @@ export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Bool
 
 export const C = {
   chip: "shrink-0 rounded-full border px-3 py-1 text-[13px] font-medium transition-colors border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 aria-pressed:border-zinc-900 aria-pressed:bg-zinc-900 aria-pressed:text-white dark:aria-pressed:border-zinc-100 dark:aria-pressed:bg-zinc-100 dark:aria-pressed:text-zinc-900",
+  /** Chip whose label and delete icon are separate buttons; `chipOn` is its selected look. */
+  chipBox: "inline-flex shrink-0 items-center rounded-full border text-[13px] font-medium transition-colors border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  chipOn: "!border-zinc-900 !bg-zinc-900 !text-white dark:!border-zinc-100 dark:!bg-zinc-100 dark:!text-zinc-900",
   btn: "inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:cursor-default disabled:opacity-40 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-400",
   ghost: "inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700",
   input: "min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100",
@@ -29,6 +32,22 @@ export const fmtClock = (s: number) => { s = Math.floor(s); return `${pad(Math.f
 export const fmtDur = (s: number) => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`; };
 export const fmtHM = (s: number) => { s = Math.max(0, Math.round(s / 60)); const h = Math.floor(s / 60), m = s % 60; return h && m ? `${h}h ${pad(m)}m` : h ? `${h}h` : `${m}m`; };
 
+const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+/** "1.2M views", or null when YouTube didn't give a count. */
+export const fmtViews = (v: Video) => v.viewCount === undefined ? null : `${compact.format(v.viewCount)} ${v.viewCount === 1 ? "view" : "views"}`;
+
+const rel = new Intl.RelativeTimeFormat("en", { numeric: "always" });
+const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+/** "3 days ago", like YouTube shows upload and comment dates. */
+export function fmtAgo(iso: string) {
+  const sec = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!Number.isFinite(sec)) return null;
+  for (const [unit, size] of STEPS) if (sec >= size) return rel.format(-Math.floor(sec / size), unit);
+  return "just now";
+}
+/** "25.4K views · 3 days ago", leaving out whichever part is unknown. */
+export const fmtMeta = (v: Video) => [fmtViews(v), fmtAgo(v.publishedAt)].filter(Boolean).join(" · ") || null;
+
 export function Thumb({ v, className }: { v: Video; className?: string }) {
   return (
     <div className={cx("relative aspect-video w-full overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-800", className)}>
@@ -47,7 +66,11 @@ export function VideoCard({ v, onOpen }: { v: Video; onOpen: (v: Video) => void 
       <Thumb v={v} className="transition group-hover:brightness-110" />
       <div className="min-w-0">
         <div title={v.title} className="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{v.title}</div>
-        <div className={cx("mt-1 truncate text-[12.5px]", C.muted)}>{v.channel}</div>
+        {/* A long channel name truncates; views and date always stay visible. */}
+        <div className={cx("mt-1 flex min-w-0 text-[12.5px]", C.muted)}>
+          <span className="truncate">{v.channel}</span>
+          {fmtMeta(v) && <span className="tnum shrink-0 whitespace-pre">{` · ${fmtMeta(v)}`}</span>}
+        </div>
       </div>
     </button>
   );

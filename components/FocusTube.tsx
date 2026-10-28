@@ -1,11 +1,12 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { LANGS, MODES, POLICY_LABEL, PRIORITY_LABEL, SHORTS_MAX_SEC } from "@/lib/defaults";
+import { LANGS, LIST_MAX, MODES, POLICY_LABEL, PRIORITY_LABEL, SHORTS_MAX_SEC } from "@/lib/defaults";
 import { buildPicks, hiddenReason, pruneCache, searchCached, searchTags, SearchFailed, tagVideos } from "@/lib/picks";
 import { useAppStore } from "@/lib/store";
 import type { ApiError, Lang, Mode, Policy, Screen, Settings, Tag, Video } from "@/lib/types";
+import { Comments } from "./Comments";
 import { Player, type PlayerHandle } from "./Player";
-import { C, cx, fmtClock, fmtHM, Icon, LangTabs, Section, SkeletonGrid, Thumb, VideoGrid } from "./ui";
+import { C, cx, fmtClock, fmtHM, fmtMeta, Icon, LangTabs, Section, SkeletonGrid, Thumb, VideoGrid } from "./ui";
 
 const NAV: [Exclude<Screen, "video">, string, string][] = [["home", "Home", "home"], ["search", "Search", "search"], ["settings", "Settings", "settings"]];
 
@@ -116,6 +117,11 @@ export default function FocusTube() {
     say(`Added “${n}”`);
     return true;
   };
+  const deleteTag = (name: string) => {
+    update((s) => ({ ...s, tags: s.tags.filter((t) => t.name !== name) }));
+    if (filter === name) setFilter("All");
+    say(`Deleted “${name}”`);
+  };
 
   if (!ready) return <div className="h-dvh bg-zinc-50 dark:bg-zinc-900" />;
 
@@ -140,8 +146,15 @@ export default function FocusTube() {
         <Section className="lg:gap-4">
           <h1 className="text-base font-semibold tracking-tight lg:text-2xl lg:font-bold">Today&apos;s picks</h1>
           <div className="no-bar -mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 lg:mx-0 lg:flex-wrap lg:px-0">
-            {chipTags.map((t) => (
+            {chipTags.map((t) => t === "All" ? (
               <button key={t} aria-pressed={active === t} onClick={() => setFilter(t)} className={cx(C.chip, C.focus)}>{t}</button>
+            ) : (
+              <span key={t} className={cx(C.chipBox, active === t && C.chipOn)}>
+                <button aria-pressed={active === t} onClick={() => setFilter(t)} className={cx("rounded-full py-1 pl-3 pr-1", C.focus)}>{t}</button>
+                <button aria-label={`Delete ${t}`} onClick={() => deleteTag(t)} className={cx("mr-1 grid place-items-center rounded-full p-0.5 opacity-60 hover:opacity-100", C.focus)}>
+                  <Icon name="close" className="text-[15px]" />
+                </button>
+              </span>
             ))}
             <button onClick={() => setAddOpen((o) => !o)} aria-expanded={addOpen} className={cx("inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-emerald-600 px-3 py-1 text-[13px] font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-950", C.focus)}>
               <Icon name="add" className="text-base" />Tag
@@ -170,6 +183,7 @@ export default function FocusTube() {
                 <button key={v.id} onClick={() => openVideo(v)} className={cx("w-[140px] shrink-0 text-left lg:w-[220px]", C.focus)}>
                   <Thumb v={v} className="mb-2" />
                   <div className="line-clamp-2 text-xs font-semibold leading-snug lg:text-sm">{v.title}</div>
+                  {fmtMeta(v) && <div className={cx("tnum mt-0.5 text-[11.5px] lg:text-xs", C.muted)}>{fmtMeta(v)}</div>}
                 </button>
               ))}
             </div>
@@ -208,7 +222,7 @@ export default function FocusTube() {
           onPlay={() => { if (blocking) { setLimitOpen(true); return false; } setEnded(false); return true; }} />
         <div>
           <h1 className="text-base font-semibold leading-snug tracking-tight lg:text-xl lg:font-bold">{v.title}</h1>
-          <div className={cx("mt-1 text-[13px]", C.muted)}>{v.channel}</div>
+          <div className={cx("tnum mt-1 text-[13px]", C.muted)}>{v.channel}{fmtMeta(v) && <> · {fmtMeta(v)}</>}</div>
         </div>
         {ended && (
           <div className="flex flex-col gap-2.5 rounded-xl bg-emerald-50 p-3.5 dark:bg-emerald-950/50">
@@ -229,6 +243,7 @@ export default function FocusTube() {
             ))}
           </div>
         </Section>
+        <Comments videoId={v.id} />
       </div>
     );
   };
@@ -237,7 +252,6 @@ export default function FocusTube() {
     <div className="flex h-dvh overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden w-64 flex-none flex-col gap-6 border-r border-zinc-200 bg-white px-5 py-6 dark:border-zinc-800 dark:bg-zinc-950 lg:flex">
-        <span className="text-lg font-bold tracking-tight">FocusTube</span>
         <nav className="flex flex-col gap-1">
           {NAV.map(([k, label, icon]) => (
             <button key={k} onClick={() => go(k)} aria-current={screen === k ? "page" : undefined}
@@ -248,14 +262,14 @@ export default function FocusTube() {
           ))}
         </nav>
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <Meter compact watched={daily.watchedSec} goal={goalSec} mode={settings.mode} />
+          <Meter compact watched={daily.watchedSec} goal={goalSec} />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Phone meter */}
         <header className="flex-none border-b border-zinc-200 bg-white px-4 pb-3 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden" style={{ paddingTop: "calc(14px + env(safe-area-inset-top, 0px))" }}>
-          <Meter watched={daily.watchedSec} goal={goalSec} mode={settings.mode} />
+          <Meter watched={daily.watchedSec} goal={goalSec} />
         </header>
 
         <main id="view" className="no-bar min-h-0 flex-1 overflow-y-auto">
@@ -301,16 +315,13 @@ export default function FocusTube() {
 }
 
 /* ---------- meter ---------- */
-function Meter({ watched, goal, mode, compact }: { watched: number; goal: number; mode: Mode; compact?: boolean }) {
+function Meter({ watched, goal, compact }: { watched: number; goal: number; compact?: boolean }) {
   const pct = goal ? watched / goal : 0, over = pct >= 1, warn = !over && pct >= 0.8;
-  const pill = over ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400" : warn ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400";
   const bar = over ? "bg-red-600 dark:bg-red-500" : warn ? "bg-amber-500" : "bg-emerald-600 dark:bg-emerald-500";
   const strong = "font-semibold text-zinc-900 dark:text-zinc-100";
-  const pillEl = <span className={cx("self-start rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold", pill)}>{MODES[mode].name} mode{over ? " · Goal reached" : warn ? " · Over 80%" : ""}</span>;
   const barEl = (
     <div className="relative mt-2.5 h-2 overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800" role="progressbar" aria-valuenow={Math.round(pct * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Daily goal">
       <i className={cx("absolute inset-y-0 left-0 rounded transition-[width] duration-500", bar)} style={{ width: `${Math.min(100, pct * 100)}%` }} />
-      <b className="absolute inset-y-0 left-[80%] w-0.5 bg-white dark:bg-zinc-950" />
     </div>
   );
   const left = over ? <><strong className={strong}>{fmtHM(watched - goal)}</strong> over</> : <><strong className={strong}>{fmtHM(goal - watched)}</strong> left</>;
@@ -320,13 +331,11 @@ function Meter({ watched, goal, mode, compact }: { watched: number; goal: number
       <div className="tnum mt-1 text-[26px] font-bold leading-tight tracking-tight">{fmtClock(watched)}</div>
       {barEl}
       <div className={cx("tnum mt-1.5 flex justify-between text-xs", C.muted)}><span>Goal <strong className={strong}>{fmtHM(goal)}</strong></span><span>{left}</span></div>
-      <div className="mt-3">{pillEl}</div>
     </div>
   );
   return (
     <>
-      <div className="flex items-center justify-between gap-2"><span className="text-[15px] font-bold tracking-tight">FocusTube</span>{pillEl}</div>
-      <div className="tnum mt-2 text-[30px] font-bold leading-none tracking-tight">{fmtClock(watched)}<span className={cx("ml-2 text-[13px] font-medium tracking-normal", C.muted)}>watched today</span></div>
+      <div className="tnum text-[30px] font-bold leading-none tracking-tight">{fmtClock(watched)}<span className={cx("ml-2 text-[13px] font-medium tracking-normal", C.muted)}>watched today</span></div>
       {barEl}
       <div className={cx("tnum mt-1.5 flex justify-between text-[12.5px]", C.muted)}><span>Goal <strong className={strong}>{fmtHM(goal)}</strong> · {Math.min(999, Math.round(pct * 100))}%</span><span>{left}</span></div>
     </>
@@ -337,7 +346,6 @@ function Meter({ watched, goal, mode, compact }: { watched: number; goal: number
 function SearchView({ settings, onOpen }: { settings: Settings; onOpen: (v: Video) => void }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
-  const [lang, setLang] = useState<Lang>("ko");
   const [res, setRes] = useState<Partial<Record<Lang, Video[]>>>({});
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -347,7 +355,7 @@ function SearchView({ settings, onOpen }: { settings: Settings; onOpen: (v: Vide
     const q = text.trim();
     if (!q || q === query) return;
     setQuery(q); setRes({}); setError(null); setBusy(true);
-    // Both languages at once so the tab counts compare Korean vs English results.
+    // Search both languages, then show them as one list.
     const out: Partial<Record<Lang, Video[]>> = {};
     for (const l of ["ko", "en"] as Lang[]) {
       try { out[l] = await searchCached(q, l); setRes({ ...out }); }
@@ -355,8 +363,17 @@ function SearchView({ settings, onOpen }: { settings: Settings; onOpen: (v: Vide
     }
     setBusy(false);
   };
-  const visible = (l: Lang) => res[l]?.filter((v) => !hiddenReason(v, settings)) ?? null;
-  const shown = visible(lang);
+  /** Korean and English results take turns, keeping each one's relevance order. */
+  const shown = useMemo(() => {
+    if (!res.ko && !res.en) return null;
+    const ko = res.ko ?? [], en = res.en ?? [], seen = new Set<string>(), out: Video[] = [];
+    for (let i = 0; i < Math.max(ko.length, en.length); i++) {
+      for (const v of [ko[i], en[i]]) {
+        if (v && !seen.has(v.id) && !hiddenReason(v, settings)) { seen.add(v.id); out.push(v); }
+      }
+    }
+    return out.slice(0, LIST_MAX);
+  }, [res, settings]);
 
   return (
     <>
@@ -366,7 +383,6 @@ function SearchView({ settings, onOpen }: { settings: Settings; onOpen: (v: Vide
       </form>
       {query && (
         <Section className="lg:gap-5">
-          <LangTabs lang={lang} onChange={setLang} count={(l) => visible(l)?.length ?? null} />
           {error && <p className={C.note}>{ERROR_TEXT[error]}</p>}
           {shown ? (shown.length ? <VideoGrid videos={shown} onOpen={onOpen} /> : <p className={cx("text-sm", C.muted)}>No results</p>)
             : busy && <SkeletonGrid n={4} />}

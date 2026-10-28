@@ -1,12 +1,12 @@
 import "server-only";
-import type { Lang, Video } from "./types";
+import type { Comment, Lang, Video } from "./types";
 
 const API = "https://www.googleapis.com/youtube/v3";
 /** Identical searches are served from Next's data cache for 6 hours to save quota. */
 const REVALIDATE_SEC = 60 * 60 * 6;
 
 export class YouTubeError extends Error {
-  constructor(public code: "NO_KEY" | "QUOTA" | "FAILED", message?: string) {
+  constructor(public code: "NO_KEY" | "QUOTA" | "FAILED", message?: string, public reason?: string) {
     super(message ?? code);
   }
 }
@@ -25,6 +25,7 @@ type SearchItem = {
 type VideoItem = {
   id: string;
   contentDetails?: { duration?: string };
+  statistics?: { viewCount?: string };
   snippet?: { defaultAudioLanguage?: string; defaultLanguage?: string };
 };
 
@@ -37,7 +38,7 @@ async function call<T>(path: string, params: Record<string, string>): Promise<T>
     const body = await res.json().catch(() => null);
     const reason: string | undefined = body?.error?.errors?.[0]?.reason;
     if (res.status === 403 && reason && /quota|rateLimit/i.test(reason)) throw new YouTubeError("QUOTA", reason);
-    throw new YouTubeError("FAILED", `${res.status} ${reason ?? ""}`.trim());
+    throw new YouTubeError("FAILED", `${res.status} ${reason ?? ""}`.trim(), reason);
   }
   return res.json() as Promise<T>;
 }
@@ -86,10 +87,11 @@ function mockVideos(q: string, lang: Lang): Video[] {
     thumb: "https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg",
     durationSec: i === 7 ? 45 : 300 + i * 137,
     publishedAt: new Date().toISOString(),
+    viewCount: 1234 * 7 ** i,
   }));
 }
 
-export async function searchVideos(q: string, lang: Lang, maxResults = 15): Promise<Video[]> {
+export async function searchVideos(q: string, lang: Lang, maxResults = 30): Promise<Video[]> {
   if (process.env.YOUTUBE_MOCK === "1") return mockVideos(q, lang);
   const search = await call<{ items: SearchItem[] }>("search", {
     part: "snippet",
@@ -104,7 +106,7 @@ export async function searchVideos(q: string, lang: Lang, maxResults = 15): Prom
   if (!items.length) return [];
 
   const details = await call<{ items: VideoItem[] }>("videos", {
-    part: "contentDetails,snippet",
+    part: "contentDetails,snippet,statistics",
     id: items.map((i) => i.id.videoId!).join(","),
   });
   const byId = new Map(details.items.map((d) => [d.id, d]));
@@ -125,7 +127,46 @@ export async function searchVideos(q: string, lang: Lang, maxResults = 15): Prom
         thumb: (t.high ?? t.medium ?? t.default)?.url ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
         durationSec: parseDuration(d?.contentDetails?.duration),
         publishedAt: i.snippet.publishedAt,
+        viewCount: d?.statistics?.viewCount ? Number(d.statistics.viewCount) : undefined,
       },
     ];
   });
+}
+
+type CommentThread = {
+  id: string;
+  snippet: {
+    totalReplyCount: number;
+    topLevelComment: {
+      snippet: { authorDisplayName: string; authorProfileImageUrl?: string; textOriginal: string; likeCount: number; publishedAt: string };
+    };
+  };
+};
+
+/** Top comments by relevance. `disabled` is true when the uploader turned comments off. */
+export async function fetchComments(videoId: string, maxResults = 20): Promise<{ comments: Comment[]; disabled: boolean }> {
+  if (process.env.YOUTUBE_MOCK === "1") {
+    return {
+      disabled: false,
+      comments: Array.from({ length: 5 }, (_, i) => ({
+        id: `mock-c-${i}`, author: `@viewer${i + 1}`, avatar: "", text: `Sample comment ${i + 1}.\nReal comments appear once the API is connected.`,
+        likes: 120 >> i, replies: i, publishedAt: new Date(Date.now() - i * 86400000).toISOString(),
+      })),
+    };
+  }
+  try {
+    const res = await call<{ items: CommentThread[] }>("commentThreads", {
+      part: "snippet", videoId, order: "relevance", textFormat: "plainText", maxResults: String(Math.min(100, maxResults)),
+    });
+    return {
+      disabled: false,
+      comments: res.items.map(({ id, snippet: t }) => {
+        const c = t.topLevelComment.snippet;
+        return { id, author: c.authorDisplayName, avatar: c.authorProfileImageUrl ?? "", text: c.textOriginal, likes: c.likeCount, replies: t.totalReplyCount, publishedAt: c.publishedAt };
+      }),
+    };
+  } catch (e) {
+    if (e instanceof YouTubeError && e.reason === "commentsDisabled") return { comments: [], disabled: true };
+    throw e;
+  }
 }

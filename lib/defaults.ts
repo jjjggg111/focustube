@@ -26,8 +26,8 @@ export const DEFAULT_SETTINGS: Settings = {
   usefulChannels: [],
 };
 
-/** Daily picks cap per language tab (PRD 4.5). */
-export const PICKS_PER_DAY = 15;
+/** Most videos any list shows: daily picks, a tag's videos, search results. */
+export const LIST_MAX = 30;
 /** Limited tags contribute at most this many videos to daily picks. */
 export const LIMITED_PER_DAY = 2;
 /**

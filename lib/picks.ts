@@ -1,5 +1,5 @@
 "use client";
-import { LIMITED_PER_DAY, PICKS_PER_DAY, SHORTS_MAX_SEC } from "./defaults";
+import { LIMITED_PER_DAY, LIST_MAX, SHORTS_MAX_SEC } from "./defaults";
 import { read, todayKey, write } from "./store";
 import type { ApiError, Lang, Settings, Tag, Video } from "./types";
 
@@ -27,7 +27,8 @@ const inflight = new Map<string, Promise<Video[]>>();
  * until midnight, which keeps daily picks inside the default search quota.
  */
 export function searchCached(q: string, lang: Lang): Promise<Video[]> {
-  const key = `${PREFIX}${todayKey()}:${lang}:${q.trim().toLowerCase()}`;
+  // Bump the version when Video gains fields (v3: viewCount), so today's older entries are skipped.
+  const key = `${PREFIX}${todayKey()}:v3:${lang}:${q.trim().toLowerCase()}`;
   const hit = read<Video[] | null>(key, null);
   if (hit) return Promise.resolve(hit);
   if (inflight.has(key)) return inflight.get(key)!;
@@ -79,10 +80,10 @@ export function buildPicks(results: Map<string, Video[]>, s: Settings): Video[] 
   const tags = searchTags(s);
   for (const pri of ["high", "mid", "low"] as const) {
     const queues = tags.filter((t) => t.policy === "allow" && t.priority === pri).map((t) => rankWithin(results.get(t.name) ?? [], s));
-    while (queues.some((q) => q.length) && out.length < PICKS_PER_DAY) {
+    while (queues.some((q) => q.length) && out.length < LIST_MAX) {
       for (const q of queues) {
         while (q.length) { const v = q.shift()!; if (take(v)) { out.push(v); break; } }
-        if (out.length >= PICKS_PER_DAY) break;
+        if (out.length >= LIST_MAX) break;
       }
     }
   }
@@ -93,10 +94,10 @@ export function buildPicks(results: Map<string, Video[]>, s: Settings): Video[] 
       if (take(v)) limited.push(v);
     }
   }
-  return [...out.slice(0, PICKS_PER_DAY - limited.length), ...limited];
+  return [...out.slice(0, LIST_MAX - limited.length), ...limited];
 }
 
-/** Videos for a single tag chip (not capped by daily picks). */
+/** Videos for a single tag chip. */
 export function tagVideos(tag: Tag, results: Map<string, Video[]>, s: Settings): Video[] {
-  return rankWithin((results.get(tag.name) ?? []).filter((v) => !hiddenReason(v, s)), s);
+  return rankWithin((results.get(tag.name) ?? []).filter((v) => !hiddenReason(v, s)), s).slice(0, LIST_MAX);
 }
